@@ -62,11 +62,17 @@ def _send_email_sync(to_email: str, otp: str, purpose: str) -> None:
     msg.attach(MIMEText(f"Your DDI verification code is: {otp}\n\nExpires in {OTP_EXPIRY_MINUTES} minutes.", "plain"))
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(smtp_email, smtp_password)
-        server.sendmail(smtp_email, to_email, msg.as_string())
-
-    logger.info(f"OTP email sent to {to_email} for {purpose}")
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
+            server.login(smtp_email, smtp_password)
+            server.sendmail(smtp_email, to_email, msg.as_string())
+        logger.info(f"OTP email sent to {to_email} for {purpose}")
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"SMTP auth failed: {e}")
+        raise ValueError("Email service authentication failed. Check SMTP credentials.")
+    except (smtplib.SMTPException, OSError) as e:
+        logger.error(f"SMTP send failed: {e}")
+        raise ValueError(f"Failed to send email: {e}")
 
 
 async def generate_and_send_otp(email: str, purpose: str) -> None:
