@@ -13,27 +13,28 @@ _client: Optional[AsyncIOMotorClient] = None
 _db = None
 
 
+def get_client():
+    return _client
+
+
 async def init_mongo():
     global _client, _db
+    logger.info(f"Connecting to MongoDB: {settings.MONGO_DB}")
     _client = AsyncIOMotorClient(
         settings.MONGO_URI,
-        serverSelectionTimeoutMS=30000,
-        connectTimeoutMS=30000,
-        socketTimeoutMS=30000,
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=10000,
     )
     _db = _client[settings.MONGO_DB]
 
-    # Verify connection with a ping
-    for attempt in range(3):
-        try:
-            await _client.admin.command("ping")
-            logger.info(f"MongoDB connected (attempt {attempt + 1}): {settings.MONGO_DB}")
-            break
-        except Exception as e:
-            logger.warning(f"MongoDB ping attempt {attempt + 1}/3 failed: {e}")
-            if attempt == 2:
-                logger.error("MongoDB connection failed after 3 attempts — app may not work correctly")
+    # Quick ping — single attempt, don't block startup on failure
+    try:
+        await _client.admin.command("ping")
+        logger.info("MongoDB ping OK")
+    except Exception as e:
+        logger.warning(f"MongoDB ping failed (will retry lazily): {e}")
 
+    # Indexes — best effort
     try:
         await _db.users.create_index("email", unique=True)
         await _db.fact_checks.create_index("email")
@@ -41,7 +42,7 @@ async def init_mongo():
         await _db.activity_logs.create_index("email")
         await _db.activity_logs.create_index("timestamp")
     except Exception as e:
-        logger.warning(f"MongoDB index creation failed (will retry on first use): {e}")
+        logger.warning(f"Index creation deferred: {e}")
 
 
 async def close_mongo():

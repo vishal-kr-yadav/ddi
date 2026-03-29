@@ -7,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
-from app.mongo import init_mongo, close_mongo, _client
+from app.mongo import init_mongo, close_mongo, get_client
 from app.routers import fact_check, trending, users
+
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +20,9 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting DDI API...")
     await init_mongo()
+    logger.info("Startup complete — ready to serve requests")
     yield
     await close_mongo()
 
@@ -47,8 +51,9 @@ app.include_router(users.router,     prefix="/api/v1", tags=["Users"])
 async def health():
     mongo_ok = False
     try:
-        if _client:
-            await _client.admin.command("ping")
+        client = get_client()
+        if client:
+            await client.admin.command("ping")
             mongo_ok = True
     except Exception:
         pass
@@ -57,9 +62,13 @@ async def health():
 
 # ── Serve frontend static files in production ─────────────────────────
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+logger.info(f"Frontend dist path: {FRONTEND_DIST} (exists: {FRONTEND_DIST.is_dir()})")
 
 if FRONTEND_DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+    # Only mount assets if the directory exists
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -67,4 +76,7 @@ if FRONTEND_DIST.is_dir():
         file = FRONTEND_DIST / full_path
         if file.is_file():
             return FileResponse(file)
-        return FileResponse(FRONTEND_DIST / "index.html")
+        index = FRONTEND_DIST / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        return {"error": "Frontend not built"}
