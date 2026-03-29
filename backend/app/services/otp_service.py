@@ -1,9 +1,6 @@
 import random
-import asyncio
 import logging
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
@@ -16,19 +13,18 @@ _otp_store: Dict[str, Dict[str, Any]] = {}
 
 OTP_EXPIRY_MINUTES = 5
 
+RESEND_API_URL = "https://api.resend.com/emails"
+
 
 def _generate_otp() -> str:
     return str(random.randint(100000, 999999))
 
 
-def _send_email_sync(to_email: str, otp: str, purpose: str) -> None:
-    smtp_email = settings.SMTP_EMAIL
-    smtp_password = settings.SMTP_APP_PASSWORD
+async def _send_email_resend(to_email: str, otp: str, purpose: str) -> None:
+    api_key = settings.RESEND_API_KEY
+    if not api_key:
+        raise ValueError("RESEND_API_KEY must be set")
 
-    if not smtp_email or not smtp_password:
-        raise ValueError("SMTP_EMAIL and SMTP_APP_PASSWORD must be set in .env")
-
-    subject = f"DDI - Your verification code: {otp}"
     action = "register your account" if purpose == "register" else "sign in"
 
     html = f"""
@@ -55,36 +51,25 @@ def _send_email_sync(to_email: str, otp: str, purpose: str) -> None:
     </div>
     """
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"DDI Verification <{smtp_email}>"
-    msg["To"] = to_email
-    msg.attach(MIMEText(f"Your DDI verification code is: {otp}\n\nExpires in {OTP_EXPIRY_MINUTES} minutes.", "plain"))
-    msg.attach(MIMEText(html, "html"))
+    payload = {
+        "from": "DDI Verification <onboarding@resend.dev>",
+        "to": [to_email],
+        "subject": f"DDI - Your verification code: {otp}",
+        "html": html,
+    }
 
-    # Try port 587 (STARTTLS) first, fallback to 465 (SSL)
-    # Railway and many cloud providers block port 465
-    for method in ["starttls", "ssl"]:
-        try:
-            if method == "starttls":
-                server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-                server.ehlo()
-                server.starttls()
-            else:
-                server = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            RESEND_API_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
 
-            with server:
-                server.login(smtp_email, smtp_password)
-                server.sendmail(smtp_email, to_email, msg.as_string())
-            logger.info(f"OTP email sent to {to_email} via {method}")
-            return  # success
-        except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"SMTP auth failed ({method}): {e}")
-            raise ValueError("Email service authentication failed. Check SMTP credentials.")
-        except (smtplib.SMTPException, OSError) as e:
-            logger.warning(f"SMTP {method} failed: {e}")
-            if method == "ssl":
-                raise ValueError(f"Failed to send email via both methods: {e}")
+    if resp.status_code >= 400:
+        logger.error(f"Resend API error {resp.status_code}: {resp.text}")
+        raise ValueError(f"Email send failed: {resp.text}")
+
+    logger.info(f"OTP email sent to {to_email} for {purpose} via Resend")
 
 
 async def generate_and_send_otp(email: str, purpose: str) -> None:
@@ -94,7 +79,7 @@ async def generate_and_send_otp(email: str, purpose: str) -> None:
         "expires_at": datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES),
         "purpose": purpose,
     }
-    await asyncio.to_thread(_send_email_sync, email, otp, purpose)
+    await _send_email_resend(email, otp, purpose)
 
 
 def verify_otp(email: str, otp: str) -> bool:

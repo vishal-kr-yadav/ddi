@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     MEDIASTACK_API_KEY: Optional[str] = None
     BING_NEWS_API_KEY: Optional[str] = None
 
-    # SMTP (Gmail) for OTP verification
+    # Email (Resend API for OTP verification)
+    RESEND_API_KEY: Optional[str] = None
+
+    # Legacy SMTP (not used on Railway — SMTP ports blocked)
     SMTP_EMAIL: Optional[str] = None
     SMTP_APP_PASSWORD: Optional[str] = None
 
