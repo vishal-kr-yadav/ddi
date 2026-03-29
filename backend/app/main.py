@@ -1,7 +1,11 @@
+import os
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.config import settings
 from app.mongo import init_mongo, close_mongo
 from app.routers import fact_check, trending, users
@@ -42,3 +46,18 @@ app.include_router(users.router,     prefix="/api/v1", tags=["Users"])
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "ok", "service": "DDI API v2.0"}
+
+
+# ── Serve frontend static files in production ─────────────────────────
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve index.html for all non-API routes (SPA client-side routing)."""
+        file = FRONTEND_DIST / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(FRONTEND_DIST / "index.html")
