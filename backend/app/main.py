@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
-from app.mongo import init_mongo, close_mongo
+from app.mongo import init_mongo, close_mongo, _client
 from app.routers import fact_check, trending, users
 
 logging.basicConfig(
@@ -45,7 +45,14 @@ app.include_router(users.router,     prefix="/api/v1", tags=["Users"])
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "service": "DDI API v2.0"}
+    mongo_ok = False
+    try:
+        if _client:
+            await _client.admin.command("ping")
+            mongo_ok = True
+    except Exception:
+        pass
+    return {"status": "ok", "service": "DDI API v2.0", "mongo": mongo_ok}
 
 
 # ── Serve frontend static files in production ─────────────────────────
