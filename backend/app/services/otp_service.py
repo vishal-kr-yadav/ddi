@@ -62,17 +62,29 @@ def _send_email_sync(to_email: str, otp: str, purpose: str) -> None:
     msg.attach(MIMEText(f"Your DDI verification code is: {otp}\n\nExpires in {OTP_EXPIRY_MINUTES} minutes.", "plain"))
     msg.attach(MIMEText(html, "html"))
 
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-            server.login(smtp_email, smtp_password)
-            server.sendmail(smtp_email, to_email, msg.as_string())
-        logger.info(f"OTP email sent to {to_email} for {purpose}")
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"SMTP auth failed: {e}")
-        raise ValueError("Email service authentication failed. Check SMTP credentials.")
-    except (smtplib.SMTPException, OSError) as e:
-        logger.error(f"SMTP send failed: {e}")
-        raise ValueError(f"Failed to send email: {e}")
+    # Try port 587 (STARTTLS) first, fallback to 465 (SSL)
+    # Railway and many cloud providers block port 465
+    for method in ["starttls", "ssl"]:
+        try:
+            if method == "starttls":
+                server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+                server.ehlo()
+                server.starttls()
+            else:
+                server = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15)
+
+            with server:
+                server.login(smtp_email, smtp_password)
+                server.sendmail(smtp_email, to_email, msg.as_string())
+            logger.info(f"OTP email sent to {to_email} via {method}")
+            return  # success
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(f"SMTP auth failed ({method}): {e}")
+            raise ValueError("Email service authentication failed. Check SMTP credentials.")
+        except (smtplib.SMTPException, OSError) as e:
+            logger.warning(f"SMTP {method} failed: {e}")
+            if method == "ssl":
+                raise ValueError(f"Failed to send email via both methods: {e}")
 
 
 async def generate_and_send_otp(email: str, purpose: str) -> None:
