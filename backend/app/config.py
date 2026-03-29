@@ -3,8 +3,8 @@ from typing import Optional, List
 
 
 class Settings(BaseSettings):
-    # Required
-    ANTHROPIC_API_KEY: str
+    # Required (but default empty so app can at least start for health checks)
+    ANTHROPIC_API_KEY: str = ""
 
     # Optional news source API keys
     NEWSAPI_KEY: Optional[str] = None

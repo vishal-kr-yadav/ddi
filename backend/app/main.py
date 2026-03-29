@@ -60,6 +60,20 @@ async def health():
     return {"status": "ok", "service": "DDI API v2.0", "mongo": mongo_ok}
 
 
+@app.get("/debug", tags=["Debug"])
+async def debug():
+    """Temporary debug endpoint — shows env var status (not values)."""
+    return {
+        "port": os.environ.get("PORT", "NOT SET"),
+        "anthropic_key_set": bool(settings.ANTHROPIC_API_KEY),
+        "mongo_uri_set": bool(settings.MONGO_URI and "localhost" not in settings.MONGO_URI),
+        "mongo_db": settings.MONGO_DB,
+        "smtp_set": bool(settings.SMTP_EMAIL),
+        "frontend_dist_exists": FRONTEND_DIST.is_dir(),
+        "cors_origins": settings.CORS_ORIGINS,
+    }
+
+
 # ── Serve frontend static files in production ─────────────────────────
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 logger.info(f"Frontend dist path: {FRONTEND_DIST} (exists: {FRONTEND_DIST.is_dir()})")
