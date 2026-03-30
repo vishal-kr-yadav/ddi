@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTrending, getRecent, getMyHistory } from '../services/api'
+import { getTrending, getRecent } from '../services/api'
 
 const VERDICT_STYLE = {
   VERIFIED:   { badge: 'bg-green-900/50 text-green-400',  dot: '🟢' },
@@ -33,36 +33,19 @@ function ClaimRow({ item, onClick }) {
   )
 }
 
-export default function TrendingSection({ onLoadResult, userEmail }) {
+export default function TrendingSection({ onLoadResult }) {
   const [trending, setTrending] = useState([])
   const [recent,   setRecent]   = useState([])
-  const [history,  setHistory]  = useState([])
 
   useEffect(() => {
     getTrending().then((d) => setTrending(d.trending || []))
     getRecent().then((d)   => setRecent(d.recent   || []))
-    if (userEmail) {
-      getMyHistory(userEmail).then((d) => setHistory(d.history || []))
-    }
-  }, [userEmail])
+  }, [])
 
-  if (!trending.length && !recent.length && !history.length) return null
+  if (!trending.length && !recent.length) return null
 
   return (
     <div className="w-full max-w-2xl space-y-6">
-      {history.length > 0 && (
-        <div>
-          <p className="text-gray-600 text-xs uppercase tracking-widest mb-3">
-            📋 Your recent checks
-          </p>
-          <div className="space-y-2">
-            {history.map((item) => (
-              <ClaimRow key={item.id} item={item} onClick={onLoadResult} />
-            ))}
-          </div>
-        </div>
-      )}
-
       {trending.length > 0 && (
         <div>
           <p className="text-gray-600 text-xs uppercase tracking-widest mb-3">

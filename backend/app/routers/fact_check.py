@@ -9,8 +9,7 @@ from app.services.news_fetcher import NewsFetcher
 from app.services.fact_checker import FactChecker, select_top_articles
 from app.services.scraper import scrape_articles
 from app.services.credibility import get_credibility
-from app.mongo import store_fact_check, get_fact_check_by_id, get_user_history, log_activity
-from app.services.user_store import check_rate_limit, record_usage
+from app.mongo import store_fact_check, get_fact_check_by_id, get_device_usage, record_device_check
 from app.config import settings
 
 router = APIRouter()
@@ -49,7 +48,7 @@ def _sse(event: str, **data) -> str:
 # SSE Streaming endpoint  (PRIMARY)
 # POST /api/v1/fact-check/stream
 # ---------------------------------------------------------------------------
-async def _stream(claim: str, email: str):
+async def _stream(claim: str, device_id: str):
     start = time.time()
     fact_check_id = str(uuid.uuid4())
 
@@ -110,8 +109,8 @@ async def _stream(claim: str, email: str):
 
         # ── Step 6: Store & record usage ──────────────────────────────────
         try:
-            await store_fact_check(result, email)
-            await record_usage(email, claim, fact_check_id)
+            await store_fact_check(result, device_id)
+            await record_device_check(device_id)
         except Exception as e:
             logger.error(f"DB store / usage error: {e}")
 
@@ -125,19 +124,18 @@ async def _stream(claim: str, email: str):
 @router.post("/fact-check/stream")
 async def fact_check_stream(
     request: ClaimRequest,
-    x_user_email: str = Header(...),
+    x_device_id: str = Header(...),
 ):
-    email = x_user_email.strip().lower()
+    device_id = x_device_id.strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="Device ID is required.")
 
     # Check rate limit
-    try:
-        usage = await check_rate_limit(email)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Email not registered.")
-    if not usage["allowed"]:
+    usage = await get_device_usage(device_id)
+    if usage["checks_remaining"] <= 0:
         raise HTTPException(
             status_code=429,
-            detail=f"Weekly limit reached ({settings.WEEKLY_FACT_CHECK_LIMIT} checks). Resets at {usage['resets_at']}.",
+            detail=f"Daily limit reached ({settings.DAILY_DEVICE_LIMIT} checks). Resets at {usage['resets_at']}.",
         )
 
     claim = request.claim.strip()
@@ -146,9 +144,9 @@ async def fact_check_stream(
     if len(claim) > 500:
         raise HTTPException(status_code=400, detail="Claim too long (max 500 chars).")
 
-    logger.info(f"Stream fact-check: '{claim}' by {email}")
+    logger.info(f"Stream fact-check: '{claim}' by device {device_id[:8]}…")
     return StreamingResponse(
-        _stream(claim, email),
+        _stream(claim, device_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -168,82 +166,3 @@ async def get_result(fact_check_id: str):
     if not result:
         raise HTTPException(status_code=404, detail="Fact-check not found.")
     return result
-
-
-# ---------------------------------------------------------------------------
-# User's own fact-check history
-# GET /api/v1/my-history?email=user@example.com
-# ---------------------------------------------------------------------------
-@router.get("/my-history")
-async def my_history(email: str):
-    email = email.strip().lower()
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required.")
-    history = await get_user_history(email)
-    return {"history": history}
-
-
-# ---------------------------------------------------------------------------
-# Non-streaming fallback  (kept for API clients / testing)
-# POST /api/v1/fact-check
-# ---------------------------------------------------------------------------
-@router.post("/fact-check", response_model=FactCheckResponse)
-async def fact_check_sync(
-    request: ClaimRequest,
-    x_user_email: str = Header(...),
-):
-    email = x_user_email.strip().lower()
-    try:
-        usage = await check_rate_limit(email)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Email not registered.")
-    if not usage["allowed"]:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Weekly limit reached ({settings.WEEKLY_FACT_CHECK_LIMIT} checks).",
-        )
-
-    start = time.time()
-    claim = request.claim.strip()
-    if not claim:
-        raise HTTPException(status_code=400, detail="Claim cannot be empty.")
-
-    all_articles = await news_fetcher.fetch_all(claim)
-    if not all_articles:
-        raise HTTPException(status_code=404, detail="No articles found.")
-
-    top = select_top_articles(all_articles, claim, top_n=settings.TOP_ARTICLES_FOR_ANALYSIS)
-    try:
-        top = await scrape_articles(top)
-    except Exception:
-        pass
-
-    try:
-        analysis = await fact_checker.analyze(claim, top)
-    except Exception as e:
-        logger.error(f"Analysis error: {e}")
-        raise HTTPException(status_code=502, detail="AI analysis failed.")
-
-    sa_map = {
-        item["index"]: item
-        for item in analysis.get("source_analysis", [])
-        if isinstance(item.get("index"), int) and 0 <= item["index"] < len(top)
-    }
-
-    enriched = [
-        ArticleSchema(**_enrich_article(a, sa_map.get(i, {})))
-        for i, a in enumerate(top)
-    ]
-
-    return FactCheckResponse(
-        claim=claim,
-        verdict=analysis.get("verdict", "UNVERIFIED"),
-        confidence=analysis.get("confidence", 0),
-        verdict_explanation=analysis.get("verdict_explanation", ""),
-        summary=analysis.get("summary", ""),
-        guidance=analysis.get("guidance", ""),
-        key_findings=analysis.get("key_findings", []),
-        articles=enriched,
-        sources_searched=len(all_articles),
-        processing_time=round(time.time() - start, 2),
-    )

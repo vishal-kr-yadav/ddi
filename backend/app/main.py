@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
-from app.mongo import init_mongo, close_mongo, get_client
-from app.routers import fact_check, trending, users
+from app.mongo import init_mongo, close_mongo, get_client, get_device_usage
+from app.routers import fact_check, trending
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,6 @@ app.add_middleware(
 
 app.include_router(fact_check.router, prefix="/api/v1", tags=["Fact Check"])
 app.include_router(trending.router,   prefix="/api/v1", tags=["Trending"])
-app.include_router(users.router,     prefix="/api/v1", tags=["Users"])
 
 
 @app.get("/health", tags=["Health"])
@@ -60,18 +59,11 @@ async def health():
     return {"status": "ok", "service": "DDI API v2.0", "mongo": mongo_ok}
 
 
-@app.get("/debug", tags=["Debug"])
-async def debug():
-    """Temporary debug endpoint — shows env var status (not values)."""
-    return {
-        "port": os.environ.get("PORT", "NOT SET"),
-        "anthropic_key_set": bool(settings.ANTHROPIC_API_KEY),
-        "mongo_uri_set": bool(settings.MONGO_URI and "localhost" not in settings.MONGO_URI),
-        "mongo_db": settings.MONGO_DB,
-        "smtp_set": bool(settings.SMTP_EMAIL),
-        "frontend_dist_exists": FRONTEND_DIST.is_dir(),
-        "cors_origins": settings.CORS_ORIGINS,
-    }
+@app.get("/api/v1/device-usage", tags=["Usage"])
+async def device_usage(device_id: str):
+    if not device_id.strip():
+        return {"checks_used": 0, "checks_remaining": settings.DAILY_DEVICE_LIMIT, "limit": settings.DAILY_DEVICE_LIMIT}
+    return await get_device_usage(device_id.strip())
 
 
 # ── Serve frontend static files in production ─────────────────────────
@@ -79,7 +71,6 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "di
 logger.info(f"Frontend dist path: {FRONTEND_DIST} (exists: {FRONTEND_DIST.is_dir()})")
 
 if FRONTEND_DIST.is_dir():
-    # Only mount assets if the directory exists
     assets_dir = FRONTEND_DIST / "assets"
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")

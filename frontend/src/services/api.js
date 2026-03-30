@@ -1,15 +1,27 @@
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000')
 
 // ---------------------------------------------------------------------------
+// Device ID — persisted in localStorage
+// ---------------------------------------------------------------------------
+export function getDeviceId() {
+  let id = localStorage.getItem('ddi_device_id')
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem('ddi_device_id', id)
+  }
+  return id
+}
+
+// ---------------------------------------------------------------------------
 // Streaming fact-check  (primary — uses SSE over fetch)
 // ---------------------------------------------------------------------------
-export async function checkFactStream(claim, email, { onProgress, onResult, onError }) {
+export async function checkFactStream(claim, deviceId, { onProgress, onResult, onError }) {
   try {
     const response = await fetch(`${API_BASE}/api/v1/fact-check/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-User-Email': email,
+        'X-Device-ID': deviceId,
       },
       body: JSON.stringify({ claim }),
     })
@@ -77,70 +89,12 @@ export async function getRecent() {
   } catch { return { recent: [] } }
 }
 
-export async function getMyHistory(email) {
+// ---------------------------------------------------------------------------
+// Device usage
+// ---------------------------------------------------------------------------
+export async function getDeviceUsage(deviceId) {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/my-history?email=${encodeURIComponent(email)}`)
-    return res.ok ? res.json() : { history: [] }
-  } catch { return { history: [] } }
-}
-
-// ---------------------------------------------------------------------------
-// User registration, login, usage
-// ---------------------------------------------------------------------------
-export async function registerUser(email) {
-  const res = await fetch(`${API_BASE}/api/v1/users/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Registration failed (${res.status})`)
-  }
-  return res.json()
-}
-
-export async function loginUser(email) {
-  const res = await fetch(`${API_BASE}/api/v1/users/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Email not found (${res.status})`)
-  }
-  return res.json()
-}
-
-export async function getUserUsage(email) {
-  const res = await fetch(`${API_BASE}/api/v1/users/usage?email=${encodeURIComponent(email)}`)
-  if (!res.ok) throw new Error('Failed to fetch usage')
-  return res.json()
-}
-
-export async function verifyRegister(email, otp) {
-  const res = await fetch(`${API_BASE}/api/v1/users/verify-register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, otp }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Verification failed (${res.status})`)
-  }
-  return res.json()
-}
-
-export async function verifyLogin(email, otp) {
-  const res = await fetch(`${API_BASE}/api/v1/users/verify-login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, otp }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `Verification failed (${res.status})`)
-  }
-  return res.json()
+    const res = await fetch(`${API_BASE}/api/v1/device-usage?device_id=${encodeURIComponent(deviceId)}`)
+    return res.ok ? res.json() : { checks_used: 0, checks_remaining: 5, limit: 5 }
+  } catch { return { checks_used: 0, checks_remaining: 5, limit: 5 } }
 }

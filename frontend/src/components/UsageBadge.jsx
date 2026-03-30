@@ -1,6 +1,6 @@
 export default function UsageBadge({ checksRemaining, checksUsed }) {
-  const total = 10
-  const isLow = checksRemaining <= 2
+  const total = checksRemaining + checksUsed
+  const isLow = checksRemaining <= 1
 
   return (
     <div
@@ -11,7 +11,7 @@ export default function UsageBadge({ checksRemaining, checksUsed }) {
       }`}
     >
       <span className="font-medium">{checksRemaining}/{total}</span>
-      <span className="hidden sm:inline">checks left</span>
+      <span className="hidden sm:inline">checks today</span>
     </div>
   )
 }

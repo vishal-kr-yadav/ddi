@@ -15,13 +15,6 @@ class Settings(BaseSettings):
     MEDIASTACK_API_KEY: Optional[str] = None
     BING_NEWS_API_KEY: Optional[str] = None
 
-    # Email (Resend API for OTP verification)
-    RESEND_API_KEY: Optional[str] = None
-
-    # Legacy SMTP (not used on Railway — SMTP ports blocked)
-    SMTP_EMAIL: Optional[str] = None
-    SMTP_APP_PASSWORD: Optional[str] = None
-
     # MongoDB
     MONGO_URI: str = "mongodb://localhost:27017"
     MONGO_DB: str = "ddi"
@@ -34,7 +27,7 @@ class Settings(BaseSettings):
     ]
     MAX_ARTICLES_PER_SOURCE: int = 5
     TOP_ARTICLES_FOR_ANALYSIS: int = 10
-    WEEKLY_FACT_CHECK_LIMIT: int = 10
+    DAILY_DEVICE_LIMIT: int = 5
 
     class Config:
         env_file = ".env"
