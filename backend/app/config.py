@@ -1,10 +1,16 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional, List
 
 
 class Settings(BaseSettings):
     # Required (but default empty so app can at least start for health checks)
     ANTHROPIC_API_KEY: str = ""
+
+    @field_validator("ANTHROPIC_API_KEY", "MONGO_URI", mode="before")
+    @classmethod
+    def strip_whitespace(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
     # Optional news source API keys
     NEWSAPI_KEY: Optional[str] = None
