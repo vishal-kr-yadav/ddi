@@ -12,6 +12,7 @@ import json
 import logging
 from typing import List
 from anthropic import AsyncAnthropic
+import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -144,7 +145,11 @@ def format_articles_for_prompt(articles: List[dict]) -> str:
 
 class FactChecker:
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.client = AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            timeout=httpx.Timeout(120.0, connect=30.0),
+            max_retries=3,
+        )
 
     async def analyze(self, claim: str, articles: List[dict]) -> dict:
         articles_text = format_articles_for_prompt(articles)
@@ -154,12 +159,14 @@ class FactChecker:
             articles_text=articles_text,
         )
 
+        logger.info(f"Calling Anthropic API (model=claude-sonnet-4-5-20241022, articles={len(articles)})")
         message = await self.client.messages.create(
-            model="claude-opus-4-6",
+            model="claude-sonnet-4-5-20241022",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
+        logger.info(f"Anthropic API responded (usage: {message.usage})")
 
         raw = message.content[0].text.strip()
 
