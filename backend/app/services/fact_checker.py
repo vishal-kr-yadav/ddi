@@ -159,9 +159,9 @@ class FactChecker:
             articles_text=articles_text,
         )
 
-        logger.info(f"Calling Anthropic API (model=claude-sonnet-4-5-20241022, articles={len(articles)})")
+        logger.info(f"Calling Anthropic API (model=claude-3-5-sonnet-20241022, articles={len(articles)})")
         message = await self.client.messages.create(
-            model="claude-sonnet-4-5-20241022",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
