@@ -61,10 +61,37 @@ async def health():
 
 @app.get("/api/v1/debug", tags=["Debug"])
 async def debug():
+    import httpx, socket, traceback
+
+    # Test 1: DNS resolution
+    dns_ok, dns_err = False, ""
+    try:
+        addrs = socket.getaddrinfo("api.anthropic.com", 443)
+        dns_ok = True
+        dns_err = f"resolved to {addrs[0][4][0]}"
+    except Exception as e:
+        dns_err = str(e)
+
+    # Test 2: Raw HTTPS GET to Anthropic
+    http_ok, http_err = False, ""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get("https://api.anthropic.com/v1/models",
+                                    headers={"x-api-key": settings.ANTHROPIC_API_KEY,
+                                             "anthropic-version": "2023-06-01"})
+            http_ok = resp.status_code < 500
+            http_err = f"status={resp.status_code}"
+    except Exception as e:
+        http_err = f"{type(e).__name__}: {e}"
+
     return {
         "anthropic_key_set": bool(settings.ANTHROPIC_API_KEY),
         "anthropic_key_prefix": settings.ANTHROPIC_API_KEY[:12] + "..." if settings.ANTHROPIC_API_KEY else "EMPTY",
         "mongo_uri_set": bool(settings.MONGO_URI and "localhost" not in settings.MONGO_URI),
+        "dns_ok": dns_ok,
+        "dns_detail": dns_err,
+        "http_ok": http_ok,
+        "http_detail": http_err,
     }
 
 
