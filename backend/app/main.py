@@ -59,6 +59,15 @@ async def health():
     return {"status": "ok", "service": "DDI API v2.0", "mongo": mongo_ok}
 
 
+@app.get("/api/v1/debug", tags=["Debug"])
+async def debug():
+    return {
+        "anthropic_key_set": bool(settings.ANTHROPIC_API_KEY),
+        "anthropic_key_prefix": settings.ANTHROPIC_API_KEY[:12] + "..." if settings.ANTHROPIC_API_KEY else "EMPTY",
+        "mongo_uri_set": bool(settings.MONGO_URI and "localhost" not in settings.MONGO_URI),
+    }
+
+
 @app.get("/api/v1/device-usage", tags=["Usage"])
 async def device_usage(device_id: str):
     if not device_id.strip():

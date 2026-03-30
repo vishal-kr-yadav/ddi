@@ -117,8 +117,8 @@ async def _stream(claim: str, device_id: str):
         yield _sse("result", data=result)
 
     except Exception as e:
-        logger.error(f"Stream error: {e}")
-        yield _sse("error", message="Something went wrong. Please try again.")
+        logger.error(f"Stream error: {type(e).__name__}: {e}")
+        yield _sse("error", message=f"Analysis failed: {type(e).__name__}: {e}")
 
 
 @router.post("/fact-check/stream")
