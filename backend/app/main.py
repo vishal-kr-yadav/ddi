@@ -122,13 +122,27 @@ async def debug_news():
         except Exception as e:
             results["google_rss_us"] = {"error": f"{type(e).__name__}: {e}"}
 
-        # DuckDuckGo News
+        # BBC RSS
         try:
-            r = await client.get(f"https://duckduckgo.com/news.js?q={query}&df=m")
-            data = r.json()
-            results["duckduckgo"] = {"status": r.status_code, "articles": len(data.get("results", []))}
+            r = await client.get("https://feeds.bbci.co.uk/news/rss.xml")
+            import feedparser
+            feed = feedparser.parse(r.text)
+            results["bbc_rss"] = {"status": r.status_code, "articles": len(feed.entries)}
         except Exception as e:
-            results["duckduckgo"] = {"error": f"{type(e).__name__}: {e}"}
+            results["bbc_rss"] = {"error": f"{type(e).__name__}: {e}"}
+
+        # Full news fetch test
+        try:
+            from app.services.news_fetcher import NewsFetcher
+            nf = NewsFetcher(settings)
+            articles = await nf.fetch_all(query)
+            sources = {}
+            for a in articles:
+                s = a["source"]
+                sources[s] = sources.get(s, 0) + 1
+            results["full_fetch"] = {"total": len(articles), "by_source": sources}
+        except Exception as e:
+            results["full_fetch"] = {"error": f"{type(e).__name__}: {e}"}
 
     return results
 

@@ -382,33 +382,54 @@ async def fetch_bing_news(query: str, api_key: str, client: httpx.AsyncClient, l
 
 
 # ---------------------------------------------------------------------------
-# Source 12: DuckDuckGo News (free, no key, global fallback)
+# Source 12: Major outlet RSS feeds (free, no key, cloud-friendly)
 # ---------------------------------------------------------------------------
-async def fetch_duckduckgo_news(query: str, client: httpx.AsyncClient, limit: int = 5) -> List[dict]:
-    try:
-        r = await client.get(
-            "https://duckduckgo.com/news.js",
-            params={"q": query, "df": "m", "l": "us-en"},
-            timeout=15.0,
-        )
-        if r.status_code != 200:
-            logger.warning(f"DuckDuckGo status {r.status_code}")
+MAJOR_RSS_FEEDS = [
+    ("https://feeds.bbci.co.uk/news/rss.xml", "BBC News"),
+    ("https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", "NYT RSS"),
+    ("https://feeds.npr.org/1001/rss.xml", "NPR"),
+    ("https://www.aljazeera.com/xml/rss/all.xml", "Al Jazeera"),
+    ("https://rss.cnn.com/rss/edition.rss", "CNN"),
+]
+
+
+async def fetch_major_rss(
+    query: str, client: httpx.AsyncClient, limit: int = 10,
+) -> List[dict]:
+    """Fetch from major outlet RSS feeds and filter by query keywords."""
+    keywords = [w.lower() for w in query.split() if len(w) > 2]
+    all_results = []
+
+    async def _fetch_one(feed_url: str, source_name: str):
+        try:
+            r = await client.get(feed_url, timeout=10.0)
+            feed = feedparser.parse(r.text)
+            matched = []
+            for entry in feed.entries:
+                title = (entry.get("title", "") or "").lower()
+                summary = (entry.get("summary", "") or "").lower()
+                if any(kw in title or kw in summary for kw in keywords):
+                    matched.append(normalize(
+                        title=entry.get("title", ""),
+                        description=entry.get("summary", ""),
+                        url=entry.get("link", ""),
+                        source=source_name,
+                        published_at=entry.get("published", ""),
+                    ))
+            return matched
+        except Exception as e:
+            logger.warning(f"RSS {source_name} error: {e}")
             return []
-        data = r.json()
-        results = []
-        for item in data.get("results", [])[:limit]:
-            results.append(normalize(
-                title=item.get("title", ""),
-                description=item.get("excerpt", ""),
-                url=item.get("url", ""),
-                source=item.get("source", "DuckDuckGo News"),
-                published_at=item.get("date", ""),
-            ))
-        logger.info(f"DuckDuckGo News returned {len(results)} articles")
-        return results
-    except Exception as e:
-        logger.warning(f"DuckDuckGo News error: {e}")
-        return []
+
+    feed_tasks = [_fetch_one(url, name) for url, name in MAJOR_RSS_FEEDS]
+    results = await asyncio.gather(*feed_tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, list):
+            all_results.extend(result)
+
+    logger.info(f"Major RSS feeds returned {len(all_results)} matching articles")
+    return all_results[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +453,7 @@ class NewsFetcher:
                 fetch_google_news_rss(query, "US", client, limit),
                 fetch_google_news_rss(query, "GB", client, limit),
                 fetch_google_news_rss(query, "IN", client, limit),
-                fetch_duckduckgo_news(query, client, limit),
+                fetch_major_rss(query, client, limit),
             ]
 
             # Optional sources (activated when API key is present)
