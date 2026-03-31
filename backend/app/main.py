@@ -95,6 +95,44 @@ async def debug():
     }
 
 
+@app.get("/api/v1/debug/news", tags=["Debug"])
+async def debug_news():
+    """Test each free news source individually."""
+    import httpx
+    query = "trump"
+    results = {}
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        timeout=httpx.Timeout(15.0),
+    ) as client:
+        # GDELT
+        try:
+            r = await client.get(f"https://api.gdeltproject.org/api/v2/doc/doc?query={query}&mode=artlist&maxrecords=3&format=json")
+            results["gdelt"] = {"status": r.status_code, "articles": len(r.json().get("articles", []))}
+        except Exception as e:
+            results["gdelt"] = {"error": f"{type(e).__name__}: {e}"}
+
+        # Google News RSS US
+        try:
+            r = await client.get(f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en")
+            import feedparser
+            feed = feedparser.parse(r.text)
+            results["google_rss_us"] = {"status": r.status_code, "articles": len(feed.entries)}
+        except Exception as e:
+            results["google_rss_us"] = {"error": f"{type(e).__name__}: {e}"}
+
+        # DuckDuckGo News
+        try:
+            r = await client.get(f"https://duckduckgo.com/news.js?q={query}&df=m")
+            data = r.json()
+            results["duckduckgo"] = {"status": r.status_code, "articles": len(data.get("results", []))}
+        except Exception as e:
+            results["duckduckgo"] = {"error": f"{type(e).__name__}: {e}"}
+
+    return results
+
+
 @app.get("/api/v1/device-usage", tags=["Usage"])
 async def device_usage(device_id: str):
     if not device_id.strip():

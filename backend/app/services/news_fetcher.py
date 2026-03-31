@@ -382,6 +382,36 @@ async def fetch_bing_news(query: str, api_key: str, client: httpx.AsyncClient, l
 
 
 # ---------------------------------------------------------------------------
+# Source 12: DuckDuckGo News (free, no key, global fallback)
+# ---------------------------------------------------------------------------
+async def fetch_duckduckgo_news(query: str, client: httpx.AsyncClient, limit: int = 5) -> List[dict]:
+    try:
+        r = await client.get(
+            "https://duckduckgo.com/news.js",
+            params={"q": query, "df": "m", "l": "us-en"},
+            timeout=15.0,
+        )
+        if r.status_code != 200:
+            logger.warning(f"DuckDuckGo status {r.status_code}")
+            return []
+        data = r.json()
+        results = []
+        for item in data.get("results", [])[:limit]:
+            results.append(normalize(
+                title=item.get("title", ""),
+                description=item.get("excerpt", ""),
+                url=item.get("url", ""),
+                source=item.get("source", "DuckDuckGo News"),
+                published_at=item.get("date", ""),
+            ))
+        logger.info(f"DuckDuckGo News returned {len(results)} articles")
+        return results
+    except Exception as e:
+        logger.warning(f"DuckDuckGo News error: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Main Fetcher Class
 # ---------------------------------------------------------------------------
 class NewsFetcher:
@@ -393,7 +423,7 @@ class NewsFetcher:
 
         async with httpx.AsyncClient(
             follow_redirects=True,
-            headers={"User-Agent": "DDI-FactChecker/1.0 (fact-checking research tool)"},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
             timeout=httpx.Timeout(20.0),
         ) as client:
             # Always-available sources
@@ -402,6 +432,7 @@ class NewsFetcher:
                 fetch_google_news_rss(query, "US", client, limit),
                 fetch_google_news_rss(query, "GB", client, limit),
                 fetch_google_news_rss(query, "IN", client, limit),
+                fetch_duckduckgo_news(query, client, limit),
             ]
 
             # Optional sources (activated when API key is present)
